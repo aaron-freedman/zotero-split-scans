@@ -127,11 +127,54 @@ python3 ~/.claude/skills/zotero-split-scans/scripts/zsplit.py locate "[Folder 42
 python3 ~/.claude/skills/zotero-split-scans/scripts/zsplit.py execute /tmp/zotero-split/<batchKey>/manifest.json
 ```
 
+## Porting to Codex
+
+The skill format is cross-runtime: [Codex](https://developers.openai.com/codex) discovers skills the same way Claude Code does — a subdirectory containing a `SKILL.md` with `name`/`description` frontmatter — so **no rewrite of the skill is required.** Only the install location, a couple of paths, and one capability check differ.
+
+**1. Install into Codex's skills directory**
+
+User-level Codex skills live at `$CODEX_HOME/skills/` (default `~/.codex/skills/`). Codex *also* reads the cross-runtime path `~/.agents/skills/`, which Copilot CLI and Gemini CLI share — install there instead if you want one copy to serve every runtime.
+
+```bash
+git clone https://github.com/aaron-freedman/zotero-split-scans.git
+mkdir -p ~/.codex/skills/zotero-split-scans                       # or ~/.agents/skills/zotero-split-scans
+cp -R zotero-split-scans/SKILL.md zotero-split-scans/scripts ~/.codex/skills/zotero-split-scans/
+```
+
+**2. Dependencies and credentials are identical**
+
+Nothing here is harness-specific. Install the same Python deps, and the script reads the same `~/.zotero_env` (a home-directory file, not tied to Claude or Codex):
+
+```bash
+pip install -r zotero-split-scans/requirements.txt
+cp zotero-split-scans/.zotero_env.example ~/.zotero_env   # then fill in your values
+```
+
+**3. Adjust the invocation paths**
+
+`SKILL.md` spells out its commands as `python3 ~/.claude/skills/zotero-split-scans/scripts/zsplit.py …`. After a Codex install, substitute the path you installed to:
+
+```bash
+python3 ~/.codex/skills/zotero-split-scans/scripts/zsplit.py locate "[Folder 42, Box 1]"
+python3 ~/.codex/skills/zotero-split-scans/scripts/zsplit.py execute /tmp/zotero-split/<batchKey>/manifest.json
+```
+
+The script *itself* needs no edits — its only absolute paths are `~/.zotero_env`, `~/Zotero/storage/` (read-only source), and the `/tmp/zotero-split/` workdir, all of which are harness-independent. If you'd rather not edit paths by hand, replace the `~/.claude/...` prefix throughout your installed `SKILL.md` with `~/.codex/...`.
+
+**4. Two behavioral differences to know**
+
+- **The `allowed-tools` frontmatter is inert on Codex.** That line (`allowed-tools: Bash(python3:*) Read`) is a Claude Code permission declaration. Codex doesn't gate tools per-skill — it reads files via `shell`, edits via `apply_patch`, and runs `python3` via `shell`, with access governed by its sandbox/approval config (`~/.codex/config.toml`), not the skill. You can leave the line in place; Codex only requires `name` and `description`. Make sure your Codex sandbox/approval settings actually permit running `python3` and reaching the network (the Zotero Web API).
+- **Verify visual image inspection — this is the one capability the skill leans on.** Its accuracy comes from the model *looking at* each `page-XXX.jpeg`, not from OCR. In Claude Code the `Read` tool renders images into the model's view; on Codex, confirm your build/model surfaces local image files to the model during a run. If it can't, the document-segmentation and handwriting-transcription steps degrade to the embedded OCR text — which this skill explicitly distrusts — so the results will be markedly weaker. Treat working image viewing as a prerequisite, not a nicety.
+
+**5. Use it**
+
+Codex loads skills natively and triggers them by matching your request against the `description`, exactly like Claude Code. Ask in natural language ("split the batch scan titled `[Folder 42, Box 1]`") and Codex will run the same `locate` → inspect → manifest → `execute` flow.
+
 ## Repository layout
 
 ```
 zotero-split-scans/
-├── SKILL.md             # the skill definition Claude reads (workflow, rules, gotchas)
+├── SKILL.md             # the skill definition the agent reads (workflow, rules, gotchas)
 ├── scripts/
 │   └── zsplit.py        # the locate/execute implementation
 ├── requirements.txt     # Python dependencies
