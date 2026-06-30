@@ -1,0 +1,17 @@
+# Never commit real credentials. Only the .example template belongs in the repo.
+.zotero_env
+*.env
+!.zotero_env.example
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Skill working directory (created at runtime under /tmp by default)
+zotero-split/
+
+# OS noise
+.DS_Store
