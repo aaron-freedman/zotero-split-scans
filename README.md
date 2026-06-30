@@ -21,6 +21,32 @@ locate  ─►  inspect (you + Claude look at the pages)  ─►  write manifest
 
 Every new item is tagged **`for review`** and filed into the batch item's deepest collection, with Archive and "Loc. in Archive" fields copied down from the batch item automatically.
 
+## How it handles Zotero metadata
+
+Each new item is assembled from **Zotero's own item template** for its type — the script calls `item_template(itemType)` first, so the item only ever carries fields Zotero recognizes for that type, and the Web API won't reject it for stray fields. Three streams of metadata then flow into that template:
+
+1. **Inherited from the batch item (automatic — never in the manifest).** The `archive` and `archiveLocation` ("Loc. in Archive") fields are copied straight down, and the batch item's tags are carried onto every child, with **`for review`** always appended. This is what keeps provenance consistent across an entire folder without you retyping it.
+2. **Supplied per document (the manifest).** Claude fills in `itemType`, `title`, `creators`, and `date` for each document from what it *sees* on the page. Creators use Zotero's structured shape — `{"creatorType": "...", "firstName": "...", "lastName": "..."}` (or a single `"name"`) — so a letter can carry both an `author` and a `recipient`.
+3. **Filing.** The item is placed only into the manifest's `collections` (the batch item's deepest subcollection), not its parents.
+
+A few deliberate rules make the metadata clean rather than just present:
+
+- **Item-type mapping.** `letter` covers letters *and* memoranda; `newspaperArticle` / `magazineArticle` are for press clippings; `manuscript` is the catch-all default for everything else.
+- **Titles vs. letters.** Every item needs a `title` — *except* letters, which may stand on an `author` creator alone. The skill deliberately **never fabricates a title beginning `[Letter…`**, because that bracketed string is Zotero's *auto-generated display title*; it leaves the field empty and lets Zotero render it, so the catalogue stays free of fake titles.
+- **Optional type-aware fields.** `letterType`, `publicationTitle`, `place`, `abstractNote`, `manuscriptType`, `numPages`, and `section` are passed through only when you provide them *and* the chosen item type actually has that field — so you never get an `abstractNote` jammed onto a type that has no such slot.
+- **The two meanings of "pages."** In the manifest, `pages` is a *list of scan-page numbers* selecting which images make up the document. But several article types also have a *bibliographic* `pages` field that Zotero expects to be a **string** page range (e.g. `"42-48"`). To keep these from colliding, the printed range is given under a separate `bibPages` key and written into Zotero's `pages`; the scan selector stays a list. Mixing them up would make the API reject the item.
+- **Verification.** After creating everything, the script re-fetches each new item's children and prints them, so you can confirm the split PDF (and any note) actually attached rather than trusting the create call alone.
+
+## How it handles handwriting
+
+Archival OCR is shaky on cursive and annotations, so the skill **does not trust the embedded OCR layer for handwritten material** — it routes around it entirely:
+
+- **Visual transcription, not OCR.** During the inspection step, Claude is told to read the *image* of any handwritten page and produce the transcription from what it sees, ignoring the OCR preview.
+- **Carried in the manifest.** That text lives on the document's `transcription` field — plain text for handwritten documents, `null` for typed ones.
+- **Stored as a child note.** On execution, a non-`null` transcription becomes a **Zotero child note** attached to the item: newlines are converted to `<br/>`, the body is wrapped as `<p><b>Transcription</b></p><p>…</p>`, and the note is tagged `for review` like everything else.
+
+The net effect is a clean division of labor: typed documents keep their machine OCR layer (the split preserves it, so they stay full-text searchable in Zotero), while handwritten ones gain a human-grade transcription note that the OCR could never have produced. A handwritten letter therefore lands in your library as three linked pieces — the catalogued item, its split PDF attachment, and the transcription note — all flagged `for review`.
+
 ## Assumptions
 
 This skill encodes a particular workflow. None of these are hard technical limits, but the defaults assume:
